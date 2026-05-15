@@ -1,4 +1,5 @@
 VISCA Camera Controller Software
+An Arduino NAno based VISCA controller for Cisco and Compatible Cameras
 
 
 Uses LCD Library: https://github.com/johnrickman/LiquidCrystal_I2C
