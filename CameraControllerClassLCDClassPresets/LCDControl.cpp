@@ -248,3 +248,5 @@ void LCDDisplay::outputProgressBar(int16_t value, const char* units, uint8_t val
 	}
 }
 
+
+

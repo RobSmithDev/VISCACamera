@@ -14,21 +14,21 @@ VISCATelepresence::VISCATelepresence(uint8_t CameraRXPin, uint8_t cameraTXPin)
 void VISCATelepresence::setCameraMode(VISCATelepresence::CameraType mode) {
   switch (mode) {
     case VISCATelepresence::CameraType::ct1080p4xS2:
-        setLimits(64,1696,880,  16,440,264,   4096,11296,  64,574,  1,16,  0,50,  12,21,  0,7,1,45);
+        setLimits(64,1696,880,  16,440,264,   4096,11296,  64,574,  1,16, 1,45);
         break;
     
     case VISCATelepresence::CameraType::ct1080p12xS2:
-        setLimits(0,816,408,   6,212,126,   0,2885,  4096,4672,  1,16,  0,200,  12,21,  0,7,1,45);
+        setLimits(0,816,408,   6,212,126,   0,2885,  4096,4672,  1,16,1,45);
         break;
     default:
-        setLimits(0,0xFFFF,0x7FFF,0,0xFFFF,0x7FFF,0,0xFFFF,0,0xFFFF,0,0xFF,0,0xFF,0,0xFF,0,0xFF,0,0xFF);
+        setLimits(0,0xFFFF,0x7FFF,0,0xFFFF,0x7FFF,0,0xFFFF,0,0xFFFF,0,0xFF,0,0xFF);
         break;
   }
 }
 
 // Yeah a little nasty
 void VISCATelepresence::setLimits(uint16_t PAN_MIN,uint16_t PAN_MAX,uint16_t PAN_MIDDLE,uint16_t TILT_MIN,uint16_t TILT_MAX,uint16_t TILT_MIDDLE,uint16_t ZOOM_MIN,uint16_t ZOOM_MAX,uint16_t FOCUS_NEAR,uint16_t FOCUS_FAR,
-               uint16_t WB_YELLOW,uint16_t WB_BLUE,uint16_t IRIS_MIN,uint16_t IRIS_MAX,uint16_t GAIN_MIN,uint16_t GAIN_MAX,uint8_t GAMMA_MIN,uint8_t GAMMA_MAX, uint8_t BRIGHTNESS_MIN, uint8_t BRIGHTNESS_MAX) {
+               uint16_t WB_YELLOW,uint16_t WB_BLUE, uint8_t BRIGHTNESS_MIN, uint8_t BRIGHTNESS_MAX) {
   m_limits.PAN_MIDDLE = PAN_MIDDLE;
   m_limits.TILT_MIDDLE =TILT_MIDDLE;
   m_limits.PAN_MIN =    PAN_MIN;
@@ -41,12 +41,6 @@ void VISCATelepresence::setLimits(uint16_t PAN_MIN,uint16_t PAN_MAX,uint16_t PAN
   m_limits.FOCUS_FAR =  FOCUS_FAR;
   m_limits.WB_YELLOW =  WB_YELLOW;
   m_limits.WB_BLUE =    WB_BLUE;
-  m_limits.IRIS_MIN =   IRIS_MIN;
-  m_limits.IRIS_MAX =   IRIS_MAX;
-  m_limits.GAIN_MIN =   GAIN_MIN;
-  m_limits.GAIN_MAX =   GAIN_MAX;
-  m_limits.GAMMA_MIN =  GAMMA_MIN;
-  m_limits.GAMMA_MAX =  GAMMA_MAX;
   m_limits.BRIGHTNESS_MIN =  BRIGHTNESS_MIN;
   m_limits.BRIGHTNESS_MAX =  BRIGHTNESS_MAX;
 }
@@ -122,18 +116,10 @@ bool VISCATelepresence::initialise(uint8_t cameraAddress, bool performReset) {
   delay(100);
 
 	// Apply some default config settings, these are mostly the ones that we can't read back anyway	
-	if (!setAutoGammaMode(false)) return false;
 	if (!setAutoExposure(false)) return false;
 	if (!setAutoWhiteBalance(true)) return false;
-	if (!setGammaValue(0)) return false;
-	if (!setIrisValue(25)) return false;
-	if (!setGainValue(0)) return false;
-  if (!setAutoGammaMode(true)) return false;
   if (!setAutoExposure(true)) return false;  
   if (!setBrightnessValue(10)) return false;
- // delay(400);
- // if (!resetPanTilt()) return false;
- // delay(1000);
   return setCallLED(true);  // ready!
 }
 
@@ -376,6 +362,49 @@ bool VISCATelepresence::setPanTilt(uint16_t pan, uint16_t tilt) {
 	return (cmd.len == 3) && (cmd.payload[1] == 0x50);
 }
 
+
+bool VISCATelepresence::panTiltStop() {
+	VISCACommand cmd;
+	cmd.len = 9;
+	cmd.payload[0] = 0x80 | m_cameraAddress;
+	cmd.payload[1] = 0x01;
+	cmd.payload[2] = 0x06;
+	cmd.payload[3] = 0x01;
+	cmd.payload[4] = 0x03;
+	cmd.payload[5] = 0x03;
+	cmd.payload[6] = 0x03;
+	cmd.payload[7] = 0x03;
+	cmd.payload[8] = 0xFF;	
+	if (!exchangeCommand(cmd)) return false;
+	return (cmd.len == 3) && (cmd.payload[1] == 0x50);
+}
+
+// Set the current Pan and Tilt position
+bool VISCATelepresence::setPanTiltSpeed(int16_t panSpeed, int16_t tiltSpeed, bool& moving) {
+	moving = false;
+	if ((panSpeed==0) && (tiltSpeed==0)) return panTiltStop();
+	VISCACommand cmd;
+
+	// Camera is stupid, if diagional modes are used then camera just pans fully in that direction and wont stop.
+	if (abs(panSpeed)<abs(tiltSpeed)) panSpeed = 0; else tiltSpeed = 0;
+
+	moving = true;
+
+	cmd.len = 9;
+	cmd.payload[0] = 0x80 | m_cameraAddress;
+	cmd.payload[1] = 0x01;
+	cmd.payload[2] = 0x06;
+	cmd.payload[3] = 0x01;
+	cmd.payload[4] = constrain(abs(panSpeed), 0, 0x0F);
+	cmd.payload[5] = constrain(abs(tiltSpeed), 0, 0x0F);
+	cmd.payload[6] = (panSpeed == 0) ? 0x03 : ((panSpeed > 0) ? 0x02 : 0x01);
+	cmd.payload[7] = (tiltSpeed == 0) ? 0x03 : ((tiltSpeed > 0) ? 0x02 : 0x01);
+	cmd.payload[8] = 0xFF;	
+	if (!exchangeCommand(cmd)) return false;
+	return (cmd.len == 3) && (cmd.payload[1] == 0x50);
+}
+
+
 // Set the current Pan and Tilt position
 bool VISCATelepresence::getPanTilt(uint16_t& pan, uint16_t& tilt) {
 	VISCACommand cmd;
@@ -443,19 +472,6 @@ bool VISCATelepresence::setNearFocus() {
 	return do_uint8_command(0x04, 0x08, 0x3F);
 }
 
-// Set the backlight compensation mode
-bool VISCATelepresence::setBacklightCompensationMode(bool enabled) {
-	return do_uint8_command(0x04, 0x33, enabled?2:3);
-}
-
-// Get the backlight compensation mode
-bool VISCATelepresence::getBacklightCompensationMode(bool& enabled) {
-	uint8_t tmp;
-	if (!do_uint8_query(0x04, 0x33, tmp)) return false;
-  enabled = tmp == 2;
-	return true;
-}
-
 // Set auto white balance
 bool VISCATelepresence::setAutoWhiteBalance(bool autoWBMode) {
 	return do_uint8_command(0x04, 0x35, autoWBMode?0:6);
@@ -488,65 +504,6 @@ bool VISCATelepresence::getAutoExposure(bool& autoExposure) {
 	return true;
 }
 
-// Sets the iris size (0-50) - doesnt appear to do anything
-bool VISCATelepresence::setIrisValue(uint16_t value) {
-  value = constrain(value, m_limits.IRIS_MIN, m_limits.IRIS_MAX);
-	if (do_uint16_command(0x04, 0x4B, value)) {
-		m_lastSetValues.irisValue = value;
-		return true;
-	}
-	return false;
-}
-
-// Sets the picture gain (12-21) - doesnt appear to do anything
-bool VISCATelepresence::setGainValue(uint16_t value) {	
-   value = constrain(value, m_limits.GAIN_MIN, m_limits.GAIN_MAX);
-	if (do_uint16_command(0x04, 0x4C, value)) {
-		m_lastSetValues.gainValue = value;
-		return true;
-	}
-	return false;
-}
-
-// Set Gamma Control
-bool VISCATelepresence::setAutoGammaMode(bool autoGamma) {
-	if (do_uint8_command(0x04, 0x51, autoGamma?2:3)) {
-		m_lastSetValues.autoGamma = autoGamma;
-		return true;
-	}
-	return false;
-}
-
-// Value is from 0 to 7
-bool VISCATelepresence::setGammaValue(uint8_t value) {
-	value = constrain(value, m_limits.GAMMA_MIN, m_limits.GAMMA_MAX);
-	if (do_uint16_command(0x04, 0x52, value)) {
-		m_lastSetValues.gammaValue = value;
-		return true;
-	}
-
-	return false;
-}
-
-// Command doesnt work on camera so this has a fallback
-bool VISCATelepresence::getGammaValue(bool& autoGamma, uint8_t& value) {
-	uint16_t tmp2;
-	uint8_t tmp;
-
-	// Auto Gamma
-	if (m_lastSetValues.autoGammaWorks && do_uint8_query(0x04, 0x51, tmp)) 
-		m_lastSetValues.autoGamma = tmp == 2;
-	else m_lastSetValues.autoGammaWorks = false;
-	autoGamma = m_lastSetValues.autoGamma;
-
-	// Gamma value
-	if (m_lastSetValues.gammaValueWorks && do_uint16_query(0x04, 0x52, tmp2)) 
-		m_lastSetValues.gammaValue = tmp2;
-	else m_lastSetValues.gammaValueWorks = false;
-	value = m_lastSetValues.gammaValue;
-	return true;
-}
-
 // Get camera brightness value
 bool VISCATelepresence::getBrightnessValue(uint8_t& value) {
 	uint16_t tmp2;
@@ -568,25 +525,4 @@ bool VISCATelepresence::setBrightnessValue(uint16_t value) {
       return true;
    }
    return false;
-}
-
-// Command doesnt work on camera so this has a fallback
-bool VISCATelepresence::getIrisValue(uint8_t& value) {
-	uint16_t tmp2;
-	if (m_lastSetValues.irisValueWorks && do_uint16_query(0x04, 0x4B, tmp2)) 
-		m_lastSetValues.irisValue = tmp2;
-	else m_lastSetValues.irisValueWorks = false;
-	value = m_lastSetValues.irisValue;
-	return true;
-}
-
-// Command doesnt work on camera so this has a fallback
-bool VISCATelepresence::getGainValue(uint8_t& value) {
-	uint16_t tmp2;
-	if (m_lastSetValues.gainValueWorks && do_uint16_query(0x04, 0x4C, tmp2)) 
-		m_lastSetValues.gainValue = tmp2; 
-	else m_lastSetValues.gainValueWorks = false;
-	
-	value = m_lastSetValues.gainValue;
-	return true;
 }

@@ -27,12 +27,12 @@
 #define CAMERA_ADDRESS 1
 
 // How much the voltage read by the joysticks has to move before we notice a change
-#define JOYSTICK_NOISE_GATE 16
+#define JOYSTICK_NOISE_GATE 8
 
 // Modes used by the app
-#define MAX_MODES 11
-enum CurrentMode : uint8_t {cmZoom=0, cmPan, cmTilt, cmFocus, cmWhiteBalance, cmExposure, cmBacklightComp, cmGamma, cmGain, cmIris, cmFlip};
-static const char* ModeNames[MAX_MODES] = { "Zoom","Pan","Tilt","Focus","White Balance","Exposure","Backlight Comp","Gamma","Gain","Iris","H/V Flip" };
+#define MAX_MODES 6
+enum CurrentMode : uint8_t {cmZoom=0,cmPanTilt, cmFocus, cmWhiteBalance, cmExposure, cmFlip};
+static const char* ModeNames[MAX_MODES] = { "Zoom","Pan/Tilt","Focus","White Balance","Exposure","H/V Flip" };
     
 // Used to track movement on the shaft encoder
 CurrentMode currentMode = CurrentMode::cmZoom;
@@ -80,12 +80,8 @@ bool getCameraSettings() {
   if (!camera.getPanTilt(cameraSettings.pan, cameraSettings.tilt)) return false;
   if (!camera.getCameraZoom(cameraSettings.zoom)) return false;
   if (!camera.getFocusValue(cameraSettings.autoFocus, cameraSettings.focus)) return false;
-  if (!camera.getBacklightCompensationMode(cameraSettings.backlightComp)) return false;
   if (!camera.getWhiteBalanceValue(cameraSettings.autoWhiteBalance, cameraSettings.whiteBalance)) return false;
   if (!camera.getAutoExposure(cameraSettings.autoExposure)) return false;
-  if (!camera.getGammaValue(cameraSettings.autoGamma, cameraSettings.gamma)) return false;
-  if (!camera.getIrisValue(cameraSettings.iris)) return false;
-  if (!camera.getGainValue(cameraSettings.gain)) return false;
   if (!camera.getBrightnessValue(cameraSettings.brightness)) return false;
   if (!camera.getHVFlip(cameraSettings.hFlip, cameraSettings.vFlip)) return false;
 
@@ -94,7 +90,6 @@ bool getCameraSettings() {
 
 // Write the current settings to the camera
 bool setCameraSettings() {
-  if (!camera.setBacklightCompensationMode(cameraSettings.backlightComp)) return false;
   if (!camera.setAutoWhiteBalance(cameraSettings.autoWhiteBalance)) return false;
   if (!cameraSettings.autoWhiteBalance) {
     delay(100);
@@ -104,13 +99,7 @@ bool setCameraSettings() {
   if (!cameraSettings.autoExposure) {
     delay(100);
     if (!camera.setBrightnessValue(cameraSettings.brightness)) return false;
-    if (!camera.setIrisValue(cameraSettings.iris)) return false;
-    if (!camera.setGainValue(cameraSettings.gain)) return false;    
   }
-  if (!camera.setAutoGammaMode(cameraSettings.autoGamma)) return false;
-  if (!cameraSettings.autoGamma) {
-    if (!camera.setGammaValue(cameraSettings.gamma)) return false;    
-  } 
   delay(100);
   if (!camera.setHVFlip(cameraSettings.hFlip, cameraSettings.vFlip)) return false;
   if (!camera.setAutoFocus(cameraSettings.autoFocus)) return false;
@@ -139,15 +128,15 @@ int16_t getJoyY() {
 void showCurrentValue() {
   switch (currentMode) {
     case CurrentMode::cmZoom: lcdPanel.outputProgressBar(cameraSettings.zoom-cameraLimits->ZOOM_MIN, NULL, 4, 0, cameraLimits->ZOOM_MAX-cameraLimits->ZOOM_MIN); break;
-    case CurrentMode::cmPan:  lcdPanel.outputProgressBar(cameraSettings.pan-cameraLimits->PAN_MIDDLE, NULL, 4, cameraLimits->PAN_MIN-cameraLimits->PAN_MIDDLE, cameraLimits->PAN_MAX-cameraLimits->PAN_MIDDLE); break;
-    case CurrentMode::cmTilt: lcdPanel.outputProgressBar(cameraSettings.tilt-cameraLimits->TILT_MIDDLE, NULL, 4, cameraLimits->TILT_MIN-cameraLimits->TILT_MIDDLE, cameraLimits->TILT_MAX-cameraLimits->TILT_MIDDLE); break;
+    case CurrentMode::cmPanTilt:  {
+                char message[17];
+                sprintf(message, "P: %04i T: %04i", cameraSettings.pan, cameraSettings.tilt);
+                lcdPanel.setStatus(message);		
+              }
+            break;
     case CurrentMode::cmFocus: if (cameraSettings.autoFocus) lcdPanel.setStatus("Automatic Focus"); else lcdPanel.outputProgressBar(cameraSettings.focus-cameraLimits->FOCUS_NEAR, NULL, 3, 0, cameraLimits->FOCUS_FAR-cameraLimits->FOCUS_NEAR); break;
     case CurrentMode::cmExposure: if (cameraSettings.autoExposure) lcdPanel.setStatus("Automatic"); else lcdPanel.outputProgressBar(cameraSettings.brightness, NULL, 2, cameraLimits->BRIGHTNESS_MIN, cameraLimits->BRIGHTNESS_MAX); break;  
     case CurrentMode::cmWhiteBalance: if (cameraSettings.autoWhiteBalance)  lcdPanel.setStatus("Auto White Bal"); else lcdPanel.outputProgressBar(cameraSettings.whiteBalance-cameraLimits->WB_YELLOW, NULL, 2, 0, cameraLimits->WB_BLUE-cameraLimits->WB_YELLOW); break;
-    case CurrentMode::cmBacklightComp: lcdPanel.setStatus(cameraSettings.backlightComp ? "Status: Enabled" : "Status: Disabled"); break;
-    case CurrentMode::cmGain: lcdPanel.outputProgressBar(cameraSettings.gain, "db", 2, cameraLimits->GAIN_MIN, cameraLimits->GAIN_MAX); break;
-    case CurrentMode::cmGamma: if (cameraSettings.autoGamma) lcdPanel.setStatus("Automatic"); else lcdPanel.outputProgressBar(cameraSettings.gamma, NULL, 1, cameraLimits->GAMMA_MIN, cameraLimits->GAMMA_MAX); break;                              
-    case CurrentMode::cmIris: lcdPanel.outputProgressBar(cameraSettings.iris-cameraLimits->IRIS_MIN, NULL, 3, 0, cameraLimits->IRIS_MAX-cameraLimits->IRIS_MIN); break;
     case CurrentMode::cmFlip: {
 								char message[17];
                 strcpy(message, "H: ");
@@ -168,8 +157,7 @@ void joystickButtonPressed() {
         camera.setCameraZoom(cameraSettings.zoom);
         showCurrentValue();
         break;
-    case CurrentMode::cmPan:
-    case CurrentMode::cmTilt:
+    case CurrentMode::cmPanTilt:
          camera.resetPanTilt();
          delay(1000);
          camera.getPanTilt(cameraSettings.pan, cameraSettings.tilt);
@@ -193,28 +181,6 @@ void joystickButtonPressed() {
         camera.setBrightnessValue(cameraSettings.brightness);
         showCurrentValue();
         break;
-    case CurrentMode::cmBacklightComp: 
-        cameraSettings.backlightComp = !cameraSettings.backlightComp;
-        camera.setBacklightCompensationMode(cameraSettings.backlightComp);    // Change between all three AE modes
-        showCurrentValue();
-        break;
-    case CurrentMode::cmGamma: 
-        cameraSettings.autoGamma = !cameraSettings.autoGamma;   // Toggle auto gamma
-        camera.setAutoGammaMode(cameraSettings.autoGamma); 
-        cameraSettings.gamma = cameraLimits->GAMMA_MIN;
-        camera.setGammaValue(cameraSettings.gamma);
-        showCurrentValue();
-        break;
-    case CurrentMode::cmGain: 
-        cameraSettings.gain = cameraLimits->GAIN_MIN; 
-        camera.setGainValue(cameraSettings.gain); 
-        showCurrentValue();
-        break;
-    case CurrentMode::cmIris: 
-        cameraSettings.iris = cameraLimits->IRIS_MIN;
-        camera.setIrisValue(cameraSettings.iris); 
-        showCurrentValue();
-        break;   
     case CurrentMode::cmFlip: 
         cameraSettings.hFlip = false;
         cameraSettings.vFlip = false;
@@ -239,8 +205,7 @@ void modeChanged() {
   // Fetch the current value for each thing
   switch (currentMode) {
     case CurrentMode::cmZoom: camera.getCameraZoom(cameraSettings.zoom); break;
-    case CurrentMode::cmPan: 
-    case CurrentMode::cmTilt: camera.getPanTilt(cameraSettings.pan, cameraSettings.tilt); break;
+    case CurrentMode::cmPanTilt:  camera.getPanTilt(cameraSettings.pan, cameraSettings.tilt); break;
     case CurrentMode::cmFocus: camera.getFocusValue(cameraSettings.autoFocus, cameraSettings.focus); break;
     case CurrentMode::cmWhiteBalance: 
                 camera.getWhiteBalanceValue(cameraSettings.autoWhiteBalance, cameraSettings.whiteBalance); 
@@ -251,19 +216,6 @@ void modeChanged() {
                       camera.getBrightnessValue(cameraSettings.brightness); 
                       smallValueSlowdown = (uint16_t)cameraSettings.brightness * 100;
                       break;
-    case CurrentMode::cmBacklightComp: camera.getBacklightCompensationMode(cameraSettings.backlightComp); break;
-    case CurrentMode::cmGamma: 
-            camera.getGammaValue(cameraSettings.autoGamma, cameraSettings.gamma); 
-            smallValueSlowdown = (uint16_t)cameraSettings.gamma * 1000;
-            break;
-    case CurrentMode::cmGain: 
-            camera.getGainValue(cameraSettings.gain); 
-            smallValueSlowdown = (uint16_t)cameraSettings.gain * 1000;
-            break;
-    case CurrentMode::cmIris: 
-            camera.getIrisValue(cameraSettings.iris); 
-            smallValueSlowdown = (uint16_t)cameraSettings.iris * 100;
-            break;
     case CurrentMode::cmFlip: camera.getHVFlip(cameraSettings.hFlip, cameraSettings.vFlip); break;
   }
   showCurrentValue();
@@ -280,16 +232,19 @@ void handleJoystickPosition(int16_t xPosition, int16_t yPosition) {
         }
       }
       break;
-    case CurrentMode::cmPan:
-    case CurrentMode::cmTilt: {
-        uint16_t lastPan = cameraSettings.pan;
-        uint16_t lastTilt = cameraSettings.tilt;
-        cameraSettings.pan = constrain((int16_t)cameraSettings.pan + (xPosition/4), (int16_t)cameraLimits->PAN_MIN, (int16_t)cameraLimits->PAN_MAX);
-        cameraSettings.tilt = constrain((int16_t)cameraSettings.tilt + (yPosition/4), (int16_t)cameraLimits->TILT_MIN, (int16_t)cameraLimits->TILT_MAX);
-        if ((cameraSettings.pan != lastPan) || (cameraSettings.tilt != lastTilt)) {
-          camera.setPanTilt(cameraSettings.pan, cameraSettings.tilt);
-          showCurrentValue();
-        }
+    case CurrentMode::cmPanTilt: {
+        static bool wasMoving = false;
+        bool moving;
+		    camera.setPanTiltSpeed(constrain(xPosition/32,-15,15), constrain(-yPosition/32, -15, 15), moving);
+        if ((moving != wasMoving) && (!moving)) {
+          uint16_t lastPan = cameraSettings.pan;
+          uint16_t lastTilt = cameraSettings.tilt;
+          camera.getPanTilt(cameraSettings.pan, cameraSettings.tilt);
+          if ((cameraSettings.pan != lastPan) || (cameraSettings.tilt != lastTilt)) {       
+            showCurrentValue();
+          }
+        }        
+        wasMoving= moving;
       }
       break;
     case CurrentMode::cmFocus: {
@@ -301,6 +256,16 @@ void handleJoystickPosition(int16_t xPosition, int16_t yPosition) {
         }
       }
       break;      
+    case CurrentMode::cmExposure: {
+        uint16_t lastExposure = cameraSettings.brightness;
+        smallValueSlowdown = constrain((int16_t)smallValueSlowdown + ((xPosition + yPosition)/16), (int16_t)cameraLimits->BRIGHTNESS_MIN*100, (int16_t)cameraLimits->BRIGHTNESS_MAX*100);
+        cameraSettings.brightness = smallValueSlowdown / 100;
+        if (lastExposure != cameraSettings.brightness) {
+          camera.setBrightnessValue(cameraSettings.brightness);
+          showCurrentValue();
+        }
+      }
+      break;                   
     case CurrentMode::cmWhiteBalance: {
         uint16_t lastWhiteBalance = cameraSettings.whiteBalance;
         smallValueSlowdown = constrain((int16_t)smallValueSlowdown + ((xPosition + yPosition)/16), (int16_t)cameraLimits->WB_YELLOW*100, (int16_t)cameraLimits->WB_BLUE*100);
@@ -311,46 +276,6 @@ void handleJoystickPosition(int16_t xPosition, int16_t yPosition) {
         }
       }
       break;         
-    case CurrentMode::cmGain: {
-        uint16_t lastGain = cameraSettings.gain;
-        smallValueSlowdown = constrain((int16_t)smallValueSlowdown + ((xPosition + yPosition)/4), (int16_t)cameraLimits->GAIN_MIN*1000, (int16_t)cameraLimits->GAIN_MAX*1000); // db
-        cameraSettings.gain = smallValueSlowdown / 1000;
-        if (lastGain != cameraSettings.gain) {
-          camera.setGainValue(cameraSettings.gain);
-          showCurrentValue();
-        }
-      }
-      break;   
-    case CurrentMode::cmExposure: {
-        uint16_t lastExposure = cameraSettings.brightness;
-        smallValueSlowdown = constrain((int16_t)smallValueSlowdown + ((xPosition + yPosition)/16), (int16_t)cameraLimits->BRIGHTNESS_MIN*100, (int16_t)cameraLimits->BRIGHTNESS_MAX*100);
-        cameraSettings.brightness = smallValueSlowdown / 100;
-        if (lastExposure != cameraSettings.brightness) {
-          camera.setBrightnessValue(cameraSettings.brightness);
-          showCurrentValue();
-        }
-      }
-      break;                
-    case CurrentMode::cmGamma: {
-        uint16_t lastGamma = cameraSettings.gamma;
-        smallValueSlowdown = constrain((int16_t)smallValueSlowdown + ((xPosition + yPosition)/32), (int16_t)cameraLimits->GAMMA_MIN*1000, (int16_t)cameraLimits->GAMMA_MAX*1000); 
-        cameraSettings.gamma = smallValueSlowdown / 1000;
-        if (lastGamma != cameraSettings.gamma) {
-          camera.setGammaValue(cameraSettings.gamma);
-          showCurrentValue();
-        }
-      }
-      break;         
-   case CurrentMode::cmIris: {
-        uint16_t lastIris = cameraSettings.iris;
-        smallValueSlowdown = constrain((int16_t)smallValueSlowdown + ((xPosition + yPosition)/4), (int16_t)cameraLimits->IRIS_MIN*100, (int16_t)cameraLimits->IRIS_MAX*100); 
-        cameraSettings.iris = smallValueSlowdown / 100;
-        if (lastIris != cameraSettings.iris) {
-          camera.setIrisValue(cameraSettings.iris);
-          showCurrentValue();
-        }
-      }
-      break;   
   case CurrentMode::cmFlip: {
         bool lasthFlip = cameraSettings.hFlip;
         bool lastvFlip = cameraSettings.vFlip;
@@ -378,25 +303,7 @@ void advanceOnce(int16_t delta) {
           showCurrentValue();
         }
       }
-      break;
-    case CurrentMode::cmPan: {
-        uint16_t lastPan = cameraSettings.pan;
-        cameraSettings.pan = constrain((int16_t)cameraSettings.pan + delta, (int16_t)cameraLimits->PAN_MIN, (int16_t)cameraLimits->PAN_MAX);
-        if (cameraSettings.pan != lastPan) {
-          camera.setPanTilt(cameraSettings.pan, cameraSettings.tilt);
-          showCurrentValue();
-        }
-      }
-      break;
-    case CurrentMode::cmTilt: {
-        uint16_t lastTilt = cameraSettings.tilt;
-        cameraSettings.tilt = constrain((int16_t)cameraSettings.tilt + delta, (int16_t)cameraLimits->TILT_MIN, (int16_t)cameraLimits->TILT_MAX);
-        if (cameraSettings.tilt != lastTilt) {
-          camera.setPanTilt(cameraSettings.pan, cameraSettings.tilt);
-          showCurrentValue();
-        }
-      }
-      break;
+      break;   
     case CurrentMode::cmFocus: {
         uint16_t lastFocus = cameraSettings.focus;
         cameraSettings.focus = constrain((int16_t)cameraSettings.focus + delta, (int16_t)cameraLimits->FOCUS_NEAR, (int16_t)cameraLimits->FOCUS_FAR);
@@ -425,37 +332,7 @@ void advanceOnce(int16_t delta) {
           showCurrentValue();
         }
       }
-      break;         
-    case CurrentMode::cmGain: {
-        uint16_t lastGain = cameraSettings.gain;
-        smallValueSlowdown = constrain(smallValueSlowdown + ((int16_t)delta*1000), (int16_t)cameraLimits->GAIN_MIN*1000, (int16_t)cameraLimits->GAIN_MAX*1000); // db
-        cameraSettings.gain = smallValueSlowdown / 1000;
-        if (lastGain != cameraSettings.gain) {
-          camera.setGainValue(cameraSettings.gain);
-          showCurrentValue();
-        }
-      }
-      break;            
-    case CurrentMode::cmGamma: {
-        uint16_t lastGamma = cameraSettings.gamma;
-        smallValueSlowdown = constrain(smallValueSlowdown +((int16_t)delta*1000), (int16_t)cameraLimits->GAMMA_MIN*1000, (int16_t)cameraLimits->GAMMA_MAX*1000); 
-        cameraSettings.gamma = smallValueSlowdown / 1000;
-        if (lastGamma != cameraSettings.gamma) {
-          camera.setGammaValue(cameraSettings.gamma);
-          showCurrentValue();
-        }
-      }
-      break;         
-   case CurrentMode::cmIris: {
-        uint16_t lastIris = cameraSettings.iris;
-        smallValueSlowdown = constrain(smallValueSlowdown +((int16_t)delta*10), (int16_t)cameraLimits->IRIS_MIN*100, (int16_t)cameraLimits->IRIS_MAX*100); 
-        cameraSettings.iris = smallValueSlowdown / 100;
-        if (lastIris != cameraSettings.iris) {
-          camera.setIrisValue(cameraSettings.iris);
-          showCurrentValue();
-        }
-      }
-      break;   
+      break;              
     default:
       break;      
   }
@@ -672,4 +549,5 @@ void loop() {
   
   // Check if the LCD should power off
   lcdPanel.monitorLCD();  
+  Serial.print("1\n");
 }

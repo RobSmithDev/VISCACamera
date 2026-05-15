@@ -2,7 +2,7 @@
 #define TELEPRESENCE_LCD_CONTROL_H
 
 #include <Wire.h>
-#include <LiquidCrystal_I2C.h>  // https://github.com/johnrickman/LiquidCrystal_I2C
+#include "LiquidCrystal_I2C.h"  // https://github.com/johnrickman/LiquidCrystal_I2C
 
 
 class LCDDisplay {
